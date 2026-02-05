@@ -51,8 +51,8 @@ func Run() {
 			return err
 		}
 		usdZero := decimal.RequireFromString("0")
-		sysUsd := models.Account{UserID: sys.ID, Currency: "USD", Balance: usdZero}
-		sysEur := models.Account{UserID: sys.ID, Currency: "EUR", Balance: usdZero}
+		sysUsd := models.Account{UserID: uint64(sys.ID), Currency: "USD", Balance: usdZero}
+		sysEur := models.Account{UserID: uint64(sys.ID), Currency: "EUR", Balance: usdZero}
 		if err := tx.Create(&sysUsd).Error; err != nil {
 			return err
 		}
@@ -70,8 +70,8 @@ func Run() {
 			if err := tx.Create(&user).Error; err != nil {
 				return err
 			}
-			userUsd := models.Account{UserID: user.ID, Currency: "USD", Balance: usd1000}
-			userEur := models.Account{UserID: user.ID, Currency: "EUR", Balance: eur500}
+			userUsd := models.Account{UserID: uint64(user.ID), Currency: "USD", Balance: usd1000}
+			userEur := models.Account{UserID: uint64(user.ID), Currency: "EUR", Balance: eur500}
 			if err := tx.Create(&userUsd).Error; err != nil {
 				return err
 			}
@@ -79,29 +79,24 @@ func Run() {
 				return err
 			}
 
-			tr := models.Transaction{UserID: user.ID, Type: "seed", Status: "completed"}
+			tr := models.Transaction{UserID: uint64(user.ID), Type: "seed", Status: "completed"}
 			if err := tx.Create(&tr).Error; err != nil {
 				return err
 			}
 			// Double-entry: system side negative, user side positive; sum = 0
 			entries := []models.LedgerEntry{
-				{TxID: tr.ID, AccountID: sysUsd.ID, Amount: usdMinus1000},
-				{TxID: tr.ID, AccountID: userUsd.ID, Amount: usd1000},
-				{TxID: tr.ID, AccountID: sysEur.ID, Amount: eurMinus500},
-				{TxID: tr.ID, AccountID: userEur.ID, Amount: eur500},
+				{TxID: uint64(tr.ID), AccountID: uint64(sysUsd.ID), Amount: usdMinus1000},
+				{TxID: uint64(tr.ID), AccountID: uint64(userUsd.ID), Amount: usd1000},
+				{TxID: uint64(tr.ID), AccountID: uint64(sysEur.ID), Amount: eurMinus500},
+				{TxID: uint64(tr.ID), AccountID: uint64(userEur.ID), Amount: eur500},
 			}
 			for _, e := range entries {
 				if err := tx.Create(&e).Error; err != nil {
 					return err
 				}
 			}
-			// Update system account balances (ledger is source of truth; we keep balances in sync)
-			// System USD: 0 - 1000 - 1000 - 1000 = -3000, EUR: 0 - 500 - 500 - 500 = -1500
-			// We already created system accounts with 0. We need to update them after each user
-			// or set them once at the end. Easiest: update system balances at the end.
 		}
 
-		// Set system account balances to match ledger totals (-3000 USD, -1500 EUR)
 		sysUsdBal := decimal.RequireFromString("-3000.00")
 		sysEurBal := decimal.RequireFromString("-1500.00")
 		if err := tx.Model(&models.Account{}).Where("id = ?", sysUsd.ID).Update("balance", sysUsdBal).Error; err != nil {

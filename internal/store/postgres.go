@@ -25,6 +25,6 @@ func NewDB() {
 }
 
 func DBMigrate() {
-	DB.AutoMigrate(&models.Account{}, &models.User{}, &models.LedgerEntry{}, &models.Transaction{})
+	DB.AutoMigrate(&models.User{}, &models.Account{}, &models.Transaction{}, &models.LedgerEntry{})
 	logger.Log.Info("migrations loaded")
 }
