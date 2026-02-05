@@ -11,6 +11,7 @@ import (
 	"github.com/GiorgiUbiria/banking_system/configs"
 	"github.com/GiorgiUbiria/banking_system/internal/logger"
 	"github.com/GiorgiUbiria/banking_system/internal/routes"
+	"github.com/GiorgiUbiria/banking_system/internal/seed"
 	"github.com/GiorgiUbiria/banking_system/internal/store"
 	"go.uber.org/zap"
 )
@@ -22,6 +23,7 @@ func main() {
 	configs.LoadConfig()
 	store.NewDB()
 	store.DBMigrate()
+	seed.Run()
 
 	router := routes.NewRoutes()
 
