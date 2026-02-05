@@ -1,0 +1,27 @@
+services:
+  api:
+    build: .
+    container_name: banking_api
+    environment:
+      APP_PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    volumes:
+      - ./configs:/app/configs:ro
+
+  db:
+    image: postgres:16-alpine
+    container_name: banking_db
+    environment:
+      POSTGRES_USER: banking
+      POSTGRES_PASSWORD: banking123
+      POSTGRES_DB: ledger
+    ports:
+      - "5432:5432"
+    volumes:
+      - banking_pgdata:/var/lib/postgresql/data
+
+volumes:
+  banking_pgdata:

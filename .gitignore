@@ -1,0 +1,43 @@
+# Binaries
+/banking
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build output
+/bin/
+/dist/
+
+# Go
+*.test
+*.out
+go.work
+go.work.sum
+/vendor/
+
+# Config with secrets (use config.example.yaml as template)
+configs/config.yaml
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+
+# Logs and temp
+*.log
+/tmp/
+/temp/

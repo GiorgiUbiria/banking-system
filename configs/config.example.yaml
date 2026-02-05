@@ -1,0 +1,6 @@
+db:
+  dsn: postgres://user:password@host:5432/dbname?sslmode=disable
+jwt:
+  secret: your-jwt-secret
+exchange-rate:
+  usd_to_eur: 0.92
