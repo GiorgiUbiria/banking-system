@@ -31,9 +31,9 @@ func NewRoutes() *chi.Mux {
 		w.Write([]byte("Account balance! " + idPram))
 	})
 
-	r.Get("/transactions", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Account balance!"))
-	})
+	r.With(appmw.Authenticated).Get("/transactions", handlers.TransactionsHandler)
+
+	r.With(appmw.Authenticated).Post("/transactions/transfer", handlers.TransferHandler)
 
 	r.Get("/swagger/*", httpSwagger.WrapHandler)
 

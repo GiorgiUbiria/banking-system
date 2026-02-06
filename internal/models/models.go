@@ -24,11 +24,13 @@ type Transaction struct {
 	UserID uint64 `gorm:"index"`
 	Type   string // transfer | exchange
 	Status string // pending | completed | failed
+	Currency string `gorm:"size:3;index;not null"`
 }
 
 type LedgerEntry struct {
 	gorm.Model
 	TxID      uint64 `gorm:"index"`
 	AccountID uint64 `gorm:"index"`
+	Currency  string `gorm:"size:3;index;not null"`
 	Amount    decimal.Decimal
 }

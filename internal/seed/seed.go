@@ -50,9 +50,10 @@ func Run() {
 		if err := tx.Create(&sys).Error; err != nil {
 			return err
 		}
+		eurZero := decimal.RequireFromString("0")
 		usdZero := decimal.RequireFromString("0")
 		sysUsd := models.Account{UserID: uint64(sys.ID), Currency: "USD", Balance: usdZero}
-		sysEur := models.Account{UserID: uint64(sys.ID), Currency: "EUR", Balance: usdZero}
+		sysEur := models.Account{UserID: uint64(sys.ID), Currency: "EUR", Balance: eurZero}
 		if err := tx.Create(&sysUsd).Error; err != nil {
 			return err
 		}
@@ -79,16 +80,16 @@ func Run() {
 				return err
 			}
 
-			tr := models.Transaction{UserID: uint64(user.ID), Type: "seed", Status: "completed"}
+			tr := models.Transaction{UserID: uint64(user.ID), Type: "seed", Status: "completed", Currency: "USD"}
 			if err := tx.Create(&tr).Error; err != nil {
 				return err
 			}
 			// Double-entry: system side negative, user side positive; sum = 0
 			entries := []models.LedgerEntry{
-				{TxID: uint64(tr.ID), AccountID: uint64(sysUsd.ID), Amount: usdMinus1000},
-				{TxID: uint64(tr.ID), AccountID: uint64(userUsd.ID), Amount: usd1000},
-				{TxID: uint64(tr.ID), AccountID: uint64(sysEur.ID), Amount: eurMinus500},
-				{TxID: uint64(tr.ID), AccountID: uint64(userEur.ID), Amount: eur500},
+				{TxID: uint64(tr.ID), AccountID: uint64(sysUsd.ID), Amount: usdMinus1000, Currency: "USD"},
+				{TxID: uint64(tr.ID), AccountID: uint64(userUsd.ID), Amount: usd1000, Currency: "USD"},
+				{TxID: uint64(tr.ID), AccountID: uint64(sysEur.ID), Amount: eurMinus500, Currency: "EUR"},
+				{TxID: uint64(tr.ID), AccountID: uint64(userEur.ID), Amount: eur500, Currency: "EUR"},
 			}
 			for _, e := range entries {
 				if err := tx.Create(&e).Error; err != nil {
@@ -99,10 +100,10 @@ func Run() {
 
 		sysUsdBal := decimal.RequireFromString("-3000.00")
 		sysEurBal := decimal.RequireFromString("-1500.00")
-		if err := tx.Model(&models.Account{}).Where("id = ?", sysUsd.ID).Update("balance", sysUsdBal).Error; err != nil {
+		if err := tx.Model(&models.Account{}).Where("id = ? AND currency = ?", sysUsd.ID, "USD").Update("balance", sysUsdBal).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&models.Account{}).Where("id = ?", sysEur.ID).Update("balance", sysEurBal).Error; err != nil {
+		if err := tx.Model(&models.Account{}).Where("id = ? AND currency = ?", sysEur.ID, "EUR").Update("balance", sysEurBal).Error; err != nil {
 			return err
 		}
 		return nil

@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/GiorgiUbiria/banking_system/configs"
@@ -10,8 +12,10 @@ import (
 	"github.com/GiorgiUbiria/banking_system/internal/models"
 	"github.com/GiorgiUbiria/banking_system/internal/store"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type LoginRequest struct {
@@ -21,6 +25,20 @@ type LoginRequest struct {
 
 type LoginResponse struct {
 	Token string `json:"token"`
+}
+
+type TransferRequest struct {
+	FromAccountID uint64 `json:"from_account_id"`
+	ToAccountID   uint64 `json:"to_account_id"`
+	Amount        string `json:"amount"`
+}
+
+type TransferResponse struct {
+	Message string `json:"message"`
+}
+
+type TransactionsResponse struct {
+	Transactions []models.Transaction `json:"transactions"`
 }
 
 // GetAccountsHandler godoc
@@ -48,7 +66,7 @@ func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 		Find(&accounts).Error; err != nil {
 
 		logger.Log.Error("failed to fetch accounts", zap.Error(err))
-		http.Error(w, "failed to fetch accounts", http.StatusInternalServerError)
+		http.Error(w, "failed to fetch accounts", http.StatusInternalServerError) 
 		return
 	}
 
@@ -116,3 +134,205 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// TransferHandler godoc
+// @Summary      Transfer money between accounts
+// @Description  Transfer money between accounts for the authenticated user
+// @Tags         transactions
+// @Accept       json
+// @Produce      json
+// @Param        transfer  body      TransferRequest  true  "Transfer request"
+// @Success      200          {object}  TransferResponse
+// @Failure      400          {string}  string  "invalid request"
+// @Failure      401          {string}  string  "unauthorized"
+// @Failure      500          {string}  string  "server error"
+// @Security     ApiKeyAuth
+// @Router       /transactions/transfer [post]
+func TransferHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	userID, ok := ctx.Value("userID").(uint64)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req TransferRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	amt, err := decimal.NewFromString(req.Amount)
+	if err != nil || !amt.IsPositive() {
+		http.Error(w, "amount must be a positive decimal", http.StatusBadRequest)
+		return
+	}
+
+	var (
+		errInsufficientFunds = errors.New("insufficient funds")
+		errForbiddenAccount  = errors.New("from account does not belong to user")
+		errCurrencyMismatch  = errors.New("accounts must have same currency")
+	)
+
+	txErr := store.DB.Transaction(func(tx *gorm.DB) error {
+		var fromAcc, toAcc models.Account
+
+		if err := tx.First(&fromAcc, req.FromAccountID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			return err
+		}
+		if err := tx.First(&toAcc, req.ToAccountID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			return err
+		}
+
+		if fromAcc.UserID != userID {
+			return errForbiddenAccount
+		}
+		if fromAcc.Currency != toAcc.Currency {
+			return errCurrencyMismatch
+		}
+		if fromAcc.Balance.LessThan(amt) {
+			return errInsufficientFunds
+		}
+
+		tr := models.Transaction{
+			UserID:   userID,
+			Type:     "transfer",
+			Status:   "pending",
+			Currency: fromAcc.Currency,
+		}
+		if err := tx.Create(&tr).Error; err != nil {
+			return err
+		}
+
+		fromAcc.Balance = fromAcc.Balance.Sub(amt)
+		toAcc.Balance = toAcc.Balance.Add(amt)
+
+		if err := tx.Save(&fromAcc).Error; err != nil {
+			return err
+		}
+		if err := tx.Save(&toAcc).Error; err != nil {
+			return err
+		}
+
+		entries := []models.LedgerEntry{
+			{
+				TxID:      uint64(tr.ID),
+				AccountID: uint64(fromAcc.ID),
+				Currency:  fromAcc.Currency,
+				Amount:    amt.Neg(),
+			},
+			{
+				TxID:      uint64(tr.ID),
+				AccountID: uint64(toAcc.ID),
+				Currency:  toAcc.Currency,
+				Amount:    amt,
+			},
+		}
+		if err := tx.Create(&entries).Error; err != nil {
+			return err
+		}
+
+		tr.Status = "completed"
+		if err := tx.Save(&tr).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if txErr != nil {
+		switch {
+		case errors.Is(txErr, errInsufficientFunds):
+			http.Error(w, "insufficient funds", http.StatusBadRequest)
+			return
+		case errors.Is(txErr, errForbiddenAccount):
+			http.Error(w, "cannot transfer from another user's account", http.StatusForbidden)
+			return
+		case errors.Is(txErr, errCurrencyMismatch):
+			http.Error(w, "accounts must have same currency", http.StatusBadRequest)
+			return
+		case errors.Is(txErr, gorm.ErrRecordNotFound):
+			http.Error(w, "account not found", http.StatusNotFound)
+			return
+		default:
+			logger.Log.Error("transfer failed", zap.Error(txErr))
+			http.Error(w, "failed to process transfer", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(TransferResponse{
+		Message: "transfer completed",
+	})
+}
+
+// TransactionsHandler godoc
+// @Summary      List user transactions
+// @Description  Get all transactions for the authenticated user
+// @Tags         transactions
+// @Produce      json
+// @Success      200  {array}   models.Transaction
+// @Failure      401  {string}  string  "unauthorized"
+// @Failure      500  {string}  string  "server error"
+// @Security     ApiKeyAuth
+// @Router       /transactions [get]
+func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	userID, ok := ctx.Value("userID").(uint64)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	q := r.URL.Query()
+	typeFilter := q.Get("type")
+
+	page := 1
+	if v := q.Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+
+	limit := 20
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+
+	offset := (page - 1) * limit
+
+	var txs []models.Transaction
+	db := store.DB.Where("user_id = ?", userID)
+	if typeFilter != "" {
+		db = db.Where("type = ?", typeFilter)
+	}
+
+	if err := db.
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&txs).Error; err != nil {
+
+		logger.Log.Error("failed to fetch transactions", zap.Error(err))
+		http.Error(w, "failed to fetch transactions", http.StatusInternalServerError)
+		return
+	}
+
+	resp := TransactionsResponse{Transactions: txs}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logger.Log.Error("failed to encode transactions response", zap.Error(err))
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
