@@ -3,6 +3,8 @@ package routes
 import (
 	"net/http"
 
+	"github.com/GiorgiUbiria/banking_system/internal/handlers"
+	appmw "github.com/GiorgiUbiria/banking_system/internal/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -19,13 +21,9 @@ func NewRoutes() *chi.Mux {
 		w.Write([]byte("Works Fine!"))
 	})
 
-	r.Get("/auth/me", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Me!"))
-	})
+	r.Post("/auth/login", handlers.LoginHandler)
 
-	r.Get("/accounts", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Accounts!"))
-	})
+	r.With(appmw.Authenticated).Get("/accounts", handlers.GetAccountsHandler)
 
 	r.Get("/accounts/{id}/balance", func(w http.ResponseWriter, r *http.Request) {
 		idPram := chi.URLParam(r, "id")
