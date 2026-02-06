@@ -2,6 +2,7 @@ package configs
 
 import (
 	"errors"
+	"os"
 
 	"github.com/GiorgiUbiria/banking_system/internal/logger"
 	"github.com/spf13/viper"
@@ -38,4 +39,11 @@ func LoadConfig() {
 	}
 
 	viper.Unmarshal(&AppConfig)
+
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		AppConfig.DB.DSN = v
+	}
+	if v := os.Getenv("JWT_SECRET"); v != "" {
+		AppConfig.JWT.SECRET = v
+	}
 }
