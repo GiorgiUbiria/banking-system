@@ -23,13 +23,11 @@ func NewRoutes() *chi.Mux {
 	})
 
 	r.Post("/auth/login", handlers.LoginHandler)
+	r.With(appmw.Authenticated).Get("/auth/me", handlers.MeHandler)
 
 	r.With(appmw.Authenticated).Get("/accounts", handlers.GetAccountsHandler)
 
-	r.Get("/accounts/{id}/balance", func(w http.ResponseWriter, r *http.Request) {
-		idPram := chi.URLParam(r, "id")
-		w.Write([]byte("Account balance! " + idPram))
-	})
+	r.With(appmw.Authenticated).Get("/accounts/{id}/balance", handlers.AccountBalanceHandler)
 
 	r.With(appmw.Authenticated).Get("/transactions", handlers.TransactionsHandler)
 

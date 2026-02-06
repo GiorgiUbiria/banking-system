@@ -65,6 +65,15 @@ definitions:
         description: Valid is true if Time is not NULL
         type: boolean
     type: object
+  internal_handlers.AccountBalanceResponse:
+    properties:
+      balance:
+        type: number
+      currency:
+        type: string
+      id:
+        type: integer
+    type: object
   internal_handlers.LoginRequest:
     properties:
       email:
@@ -75,6 +84,15 @@ definitions:
   internal_handlers.LoginResponse:
     properties:
       token:
+        type: string
+    type: object
+  internal_handlers.MeResponse:
+    properties:
+      email:
+        type: string
+      id:
+        type: integer
+      name:
         type: string
     type: object
   internal_handlers.TransferRequest:
@@ -123,6 +141,48 @@ paths:
       summary: List user accounts
       tags:
       - accounts
+  /accounts/{id}/balance:
+    get:
+      description: Get balance for a specific account belonging to the authenticated
+        user
+      parameters:
+      - description: Account ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.AccountBalanceResponse'
+        "400":
+          description: invalid account id
+          schema:
+            type: string
+        "401":
+          description: unauthorized
+          schema:
+            type: string
+        "403":
+          description: forbidden
+          schema:
+            type: string
+        "404":
+          description: account not found
+          schema:
+            type: string
+        "500":
+          description: server error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Get account balance
+      tags:
+      - accounts
   /auth/login:
     post:
       consumes:
@@ -151,6 +211,33 @@ paths:
           schema:
             type: string
       summary: User login
+      tags:
+      - auth
+  /auth/me:
+    get:
+      description: Get profile of the authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.MeResponse'
+        "401":
+          description: unauthorized
+          schema:
+            type: string
+        "404":
+          description: user not found
+          schema:
+            type: string
+        "500":
+          description: server error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Get current user
       tags:
       - auth
   /ledger:

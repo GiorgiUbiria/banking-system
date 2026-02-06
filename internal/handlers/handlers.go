@@ -13,6 +13,7 @@ import (
 	"github.com/GiorgiUbiria/banking_system/internal/store"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/shopspring/decimal"
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -43,6 +44,18 @@ type TransactionsResponse struct {
 
 type LedgerEntriesResponse struct {
 	Entries []models.LedgerEntry `json:"entries"`
+}
+
+type MeResponse struct {
+	ID    uint   `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+type AccountBalanceResponse struct {
+	ID       uint            `json:"id"`
+	Currency string          `json:"currency"`
+	Balance  decimal.Decimal `json:"balance"`
 }
 
 // GetAccountsHandler godoc
@@ -77,6 +90,66 @@ func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(accounts); err != nil {
 		logger.Log.Error("failed to encode response", zap.Error(err))
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// AccountBalanceHandler godoc
+// @Summary      Get account balance
+// @Description  Get balance for a specific account belonging to the authenticated user
+// @Tags         accounts
+// @Produce      json
+// @Param        id   path      int  true  "Account ID"
+// @Success      200  {object}  AccountBalanceResponse
+// @Failure      400  {string}  string  "invalid account id"
+// @Failure      401  {string}  string  "unauthorized"
+// @Failure      403  {string}  string  "forbidden"
+// @Failure      404  {string}  string  "account not found"
+// @Failure      500  {string}  string  "server error"
+// @Security     ApiKeyAuth
+// @Router       /accounts/{id}/balance [get]
+func AccountBalanceHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	userID, ok := ctx.Value("userID").(uint64)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid account id", http.StatusBadRequest)
+		return
+	}
+
+	var acc models.Account
+	if err := store.DB.First(&acc, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "account not found", http.StatusNotFound)
+			return
+		}
+		logger.Log.Error("failed to load account", zap.Error(err))
+		http.Error(w, "failed to fetch account", http.StatusInternalServerError)
+		return
+	}
+
+	if acc.UserID != userID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	resp := AccountBalanceResponse{
+		ID:       acc.ID,
+		Currency: acc.Currency,
+		Balance:  acc.Balance,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logger.Log.Error("failed to encode account balance response", zap.Error(err))
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 		return
 	}
@@ -133,6 +206,51 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(LoginResponse{Token: signed}); err != nil {
 		logger.Log.Error("failed to encode login response", zap.Error(err))
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// MeHandler godoc
+// @Summary      Get current user
+// @Description  Get profile of the authenticated user
+// @Tags         auth
+// @Produce      json
+// @Success      200  {object}  MeResponse
+// @Failure      401  {string}  string  "unauthorized"
+// @Failure      404  {string}  string  "user not found"
+// @Failure      500  {string}  string  "server error"
+// @Security     ApiKeyAuth
+// @Router       /auth/me [get]
+func MeHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	userID, ok := ctx.Value("userID").(uint64)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var user models.User
+	if err := store.DB.First(&user, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+		logger.Log.Error("failed to load user", zap.Error(err))
+		http.Error(w, "failed to fetch user", http.StatusInternalServerError)
+		return
+	}
+
+	resp := MeResponse{
+		ID:    user.ID,
+		Name:  user.Name,
+		Email: user.Email,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logger.Log.Error("failed to encode me response", zap.Error(err))
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 		return
 	}
