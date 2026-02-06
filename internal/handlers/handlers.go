@@ -11,9 +11,9 @@ import (
 	"github.com/GiorgiUbiria/banking_system/internal/logger"
 	"github.com/GiorgiUbiria/banking_system/internal/models"
 	"github.com/GiorgiUbiria/banking_system/internal/store"
+	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/shopspring/decimal"
-	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -34,7 +34,17 @@ type TransferRequest struct {
 	Amount        string `json:"amount"`
 }
 
+type ExchangeRequest struct {
+	FromAccountID uint64 `json:"from_account_id"`
+	ToAccountID   uint64 `json:"to_account_id"`
+	Amount        string `json:"amount"`
+}
+
 type TransferResponse struct {
+	Message string `json:"message"`
+}
+
+type ExchangeResponse struct {
 	Message string `json:"message"`
 }
 
@@ -83,7 +93,7 @@ func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 		Find(&accounts).Error; err != nil {
 
 		logger.Log.Error("failed to fetch accounts", zap.Error(err))
-		http.Error(w, "failed to fetch accounts", http.StatusInternalServerError) 
+		http.Error(w, "failed to fetch accounts", http.StatusInternalServerError)
 		return
 	}
 
@@ -394,6 +404,164 @@ func TransferHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ExchangeHandler godoc
+// @Summary      Exchange currency
+// @Description  Exchange currency between user's own accounts (USD ↔ EUR) using fixed rate
+// @Tags         transactions
+// @Accept       json
+// @Produce      json
+// @Param        exchange  body      ExchangeRequest  true  "Exchange request"
+// @Success      200       {object}  ExchangeResponse
+// @Failure      400       {string}  string  "invalid request"
+// @Failure      401       {string}  string  "unauthorized"
+// @Failure      403       {string}  string  "forbidden"
+// @Failure      404       {string}  string  "account not found"
+// @Failure      500       {string}  string  "server error"
+// @Security     ApiKeyAuth
+// @Router       /transactions/exchange [post]
+func ExchangeHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	userID, ok := ctx.Value("userID").(uint64)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req ExchangeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	amt, err := decimal.NewFromString(req.Amount)
+	if err != nil || !amt.IsPositive() {
+		http.Error(w, "amount must be a positive decimal", http.StatusBadRequest)
+		return
+	}
+
+	var (
+		errInsufficientFunds    = errors.New("insufficient funds")
+		errForbiddenFromAccount = errors.New("from account does not belong to user")
+		errForbiddenToAccount   = errors.New("to account does not belong to user")
+		errSameCurrency         = errors.New("accounts must have different currencies")
+	)
+
+	rate := decimal.NewFromFloat(configs.AppConfig.ExchangeRate.UsdToEur)
+
+	txErr := store.DB.Transaction(func(tx *gorm.DB) error {
+		var fromAcc, toAcc models.Account
+
+		if err := tx.First(&fromAcc, req.FromAccountID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			return err
+		}
+		if err := tx.First(&toAcc, req.ToAccountID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			return err
+		}
+
+		if fromAcc.UserID != userID {
+			return errForbiddenFromAccount
+		}
+		if toAcc.UserID != userID {
+			return errForbiddenToAccount
+		}
+		if fromAcc.Currency == toAcc.Currency {
+			return errSameCurrency
+		}
+		if fromAcc.Balance.LessThan(amt) {
+			return errInsufficientFunds
+		}
+
+		tr := models.Transaction{
+			UserID:   userID,
+			Type:     "exchange",
+			Status:   "pending",
+			Currency: fromAcc.Currency,
+		}
+		if err := tx.Create(&tr).Error; err != nil {
+			return err
+		}
+
+		var amtToAdd decimal.Decimal
+		switch fromAcc.Currency {
+		case "USD":
+			fromAcc.Balance = fromAcc.Balance.Sub(amt)
+			amtToAdd = amt.Mul(rate)
+			toAcc.Balance = toAcc.Balance.Add(amtToAdd)
+		case "EUR":
+			fromAcc.Balance = fromAcc.Balance.Sub(amt)
+			amtToAdd = amt.Div(rate)
+			toAcc.Balance = toAcc.Balance.Add(amtToAdd)
+		}
+
+		if err := tx.Save(&fromAcc).Error; err != nil {
+			return err
+		}
+		if err := tx.Save(&toAcc).Error; err != nil {
+			return err
+		}
+
+		entries := []models.LedgerEntry{
+			{
+				TxID:      uint64(tr.ID),
+				AccountID: uint64(fromAcc.ID),
+				Currency:  fromAcc.Currency,
+				Amount:    amt.Neg(),
+			},
+			{
+				TxID:      uint64(tr.ID),
+				AccountID: uint64(toAcc.ID),
+				Currency:  toAcc.Currency,
+				Amount:    amtToAdd,
+			},
+		}
+		if err := tx.Create(&entries).Error; err != nil {
+			return err
+		}
+
+		tr.Status = "completed"
+		if err := tx.Save(&tr).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if txErr != nil {
+		switch {
+		case errors.Is(txErr, errInsufficientFunds):
+			http.Error(w, "insufficient funds", http.StatusBadRequest)
+			return
+		case errors.Is(txErr, errForbiddenFromAccount):
+			http.Error(w, "cannot exchange from another user's account", http.StatusForbidden)
+			return
+		case errors.Is(txErr, errForbiddenToAccount):
+			http.Error(w, "cannot exchange to another user's account", http.StatusForbidden)
+			return
+		case errors.Is(txErr, errSameCurrency):
+			http.Error(w, "accounts must have different currencies", http.StatusBadRequest)
+			return
+		case errors.Is(txErr, gorm.ErrRecordNotFound):
+			http.Error(w, "account not found", http.StatusNotFound)
+			return
+		default:
+			logger.Log.Error("exchange failed", zap.Error(txErr))
+			http.Error(w, "failed to process exchange", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ExchangeResponse{
+		Message: "exchange completed",
+	})
+}
+
 // TransactionsHandler godoc
 // @Summary      List user transactions
 // @Description  Get all transactions for the authenticated user
@@ -576,4 +744,3 @@ func LedgerEntriesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
-
