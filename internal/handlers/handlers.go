@@ -41,6 +41,10 @@ type TransactionsResponse struct {
 	Transactions []models.Transaction `json:"transactions"`
 }
 
+type LedgerEntriesResponse struct {
+	Entries []models.LedgerEntry `json:"entries"`
+}
+
 // GetAccountsHandler godoc
 // @Summary      List user accounts
 // @Description  Get all accounts for the authenticated user
@@ -336,3 +340,122 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+// LedgerEntriesHandler godoc
+// @Summary      List user ledger entries
+// @Description  Get ledger entries for the authenticated user, optionally filtered by transaction or account
+// @Tags         ledger
+// @Produce      json
+// @Param        tx_id       query     int     false  "Transaction ID"
+// @Param        account_id  query     int     false  "Account ID"
+// @Param        page        query     int     false  "Page number"
+// @Param        limit       query     int     false  "Page size (max 100)"
+// @Success      200         {array}   models.LedgerEntry
+// @Failure      401         {string}  string  "unauthorized"
+// @Failure      500         {string}  string  "server error"
+// @Security     ApiKeyAuth
+// @Router       /ledger [get]
+func LedgerEntriesHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	userID, ok := ctx.Value("userID").(uint64)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	q := r.URL.Query()
+	txIDStr := q.Get("tx_id")
+	accountIDStr := q.Get("account_id")
+
+	page := 1
+	if v := q.Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+
+	limit := 20
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+
+	offset := (page - 1) * limit
+
+	db := store.DB.Model(&models.LedgerEntry{})
+
+	if accountIDStr != "" {
+		accID, err := strconv.Atoi(accountIDStr)
+		if err != nil || accID <= 0 {
+			http.Error(w, "invalid account_id", http.StatusBadRequest)
+			return
+		}
+
+		var acc models.Account
+		if err := store.DB.First(&acc, accID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				http.Error(w, "account not found", http.StatusNotFound)
+				return
+			}
+			logger.Log.Error("failed to load account", zap.Error(err))
+			http.Error(w, "failed to fetch ledger entries", http.StatusInternalServerError)
+			return
+		}
+		if acc.UserID != userID {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		db = db.Where("account_id = ?", accID)
+	} else if txIDStr != "" {
+		tid, err := strconv.Atoi(txIDStr)
+		if err != nil || tid <= 0 {
+			http.Error(w, "invalid tx_id", http.StatusBadRequest)
+			return
+		}
+
+		var tr models.Transaction
+		if err := store.DB.First(&tr, tid).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				http.Error(w, "transaction not found", http.StatusNotFound)
+				return
+			}
+			logger.Log.Error("failed to load transaction", zap.Error(err))
+			http.Error(w, "failed to fetch ledger entries", http.StatusInternalServerError)
+			return
+		}
+		if tr.UserID != userID {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		db = db.Where("tx_id = ?", tid)
+	} else {
+		sub := store.DB.Model(&models.Account{}).
+			Select("id").
+			Where("user_id = ?", userID)
+		db = db.Where("account_id IN (?)", sub)
+	}
+
+	var entries []models.LedgerEntry
+	if err := db.
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&entries).Error; err != nil {
+
+		logger.Log.Error("failed to fetch ledger entries", zap.Error(err))
+		http.Error(w, "failed to fetch ledger entries", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(entries); err != nil {
+		logger.Log.Error("failed to encode ledger entries response", zap.Error(err))
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+

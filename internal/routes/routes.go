@@ -35,6 +35,8 @@ func NewRoutes() *chi.Mux {
 
 	r.With(appmw.Authenticated).Post("/transactions/transfer", handlers.TransferHandler)
 
+	r.With(appmw.Authenticated).Get("/ledger", handlers.LedgerEntriesHandler)
+
 	r.Get("/swagger/*", httpSwagger.WrapHandler)
 
 	return r
