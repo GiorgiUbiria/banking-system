@@ -1,5 +1,15 @@
 package main
 
+// @title           Mini Banking API
+// @version         1.0
+// @description     Simplified banking platform for the assessment
+// @host            localhost:8080
+// @BasePath        /
+// @schemes         http
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name Authorization
+
 import (
 	"context"
 	"net/http"
@@ -9,6 +19,7 @@ import (
 	"time"
 
 	"github.com/GiorgiUbiria/banking_system/configs"
+	_ "github.com/GiorgiUbiria/banking_system/cmd/server/docs"
 	"github.com/GiorgiUbiria/banking_system/internal/logger"
 	"github.com/GiorgiUbiria/banking_system/internal/routes"
 	"github.com/GiorgiUbiria/banking_system/internal/seed"

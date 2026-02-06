@@ -7,6 +7,7 @@ import (
 	appmw "github.com/GiorgiUbiria/banking_system/internal/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 func NewRoutes() *chi.Mux {
@@ -33,6 +34,8 @@ func NewRoutes() *chi.Mux {
 	r.Get("/transactions", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Account balance!"))
 	})
+
+	r.Get("/swagger/*", httpSwagger.WrapHandler)
 
 	return r
 }

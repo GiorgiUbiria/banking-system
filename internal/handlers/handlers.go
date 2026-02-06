@@ -23,6 +23,16 @@ type LoginResponse struct {
 	Token string `json:"token"`
 }
 
+// GetAccountsHandler godoc
+// @Summary      List user accounts
+// @Description  Get all accounts for the authenticated user
+// @Tags         accounts
+// @Produce      json
+// @Success      200  {array}   models.Account
+// @Failure      401  {string}  string  "unauthorized"
+// @Failure      500  {string}  string  "server error"
+// @Security     ApiKeyAuth
+// @Router       /accounts [get]
 func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -50,6 +60,17 @@ func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// LoginHandler godoc
+// @Summary      User login
+// @Description  Authenticate user and return JWT token
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        credentials  body      LoginRequest  true  "Login credentials"
+// @Success      200          {object}  LoginResponse
+// @Failure      400          {string}  string  "invalid request"
+// @Failure      401          {string}  string  "invalid email or password"
+// @Router       /auth/login [post]
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
