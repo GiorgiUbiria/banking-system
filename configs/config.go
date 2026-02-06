@@ -33,17 +33,26 @@ func LoadConfig() {
 	var fileLookupError viper.ConfigFileNotFoundError
 	if err := viper.ReadInConfig(); err != nil {
 		if errors.As(err, &fileLookupError) {
-			logger.Log.Fatal("config file not found", zap.Error(err))
+			logger.Log.Info("config file not found, using environment variables")
+			AppConfig.ExchangeRate.UsdToEur = 0.92
+		} else {
+			logger.Log.Fatal("failed to read config", zap.Error(err))
 		}
-		logger.Log.Fatal("failed to read config", zap.Error(err))
+	} else {
+		viper.Unmarshal(&AppConfig)
 	}
-
-	viper.Unmarshal(&AppConfig)
 
 	if v := os.Getenv("DATABASE_URL"); v != "" {
 		AppConfig.DB.DSN = v
 	}
 	if v := os.Getenv("JWT_SECRET"); v != "" {
 		AppConfig.JWT.SECRET = v
+	}
+
+	if AppConfig.DB.DSN == "" {
+		logger.Log.Fatal("DATABASE_URL or config db.dsn is required")
+	}
+	if AppConfig.JWT.SECRET == "" {
+		logger.Log.Fatal("JWT_SECRET or config jwt.secret is required")
 	}
 }
