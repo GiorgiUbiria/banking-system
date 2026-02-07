@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type LoginRequest struct {
@@ -308,18 +309,24 @@ func TransferHandler(w http.ResponseWriter, r *http.Request) {
 
 	txErr := store.DB.Transaction(func(tx *gorm.DB) error {
 		var fromAcc, toAcc models.Account
-
-		if err := tx.First(&fromAcc, req.FromAccountID).Error; err != nil {
+		id1, id2 := req.FromAccountID, req.ToAccountID
+		if id1 > id2 {
+			id1, id2 = id2, id1
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&fromAcc, id1).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
 			return err
 		}
-		if err := tx.First(&toAcc, req.ToAccountID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&toAcc, id2).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
 			return err
+		}
+		if id1 != req.FromAccountID {
+			fromAcc, toAcc = toAcc, fromAcc
 		}
 
 		if fromAcc.UserID != userID {
@@ -451,18 +458,24 @@ func ExchangeHandler(w http.ResponseWriter, r *http.Request) {
 
 	txErr := store.DB.Transaction(func(tx *gorm.DB) error {
 		var fromAcc, toAcc models.Account
-
-		if err := tx.First(&fromAcc, req.FromAccountID).Error; err != nil {
+		id1, id2 := req.FromAccountID, req.ToAccountID
+		if id1 > id2 {
+			id1, id2 = id2, id1
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&fromAcc, id1).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
 			return err
 		}
-		if err := tx.First(&toAcc, req.ToAccountID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&toAcc, id2).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
 			return err
+		}
+		if id1 != req.FromAccountID {
+			fromAcc, toAcc = toAcc, fromAcc
 		}
 
 		if fromAcc.UserID != userID {
