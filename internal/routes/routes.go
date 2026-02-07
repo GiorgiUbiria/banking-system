@@ -35,6 +35,8 @@ func NewRoutes() *chi.Mux {
 
 	r.With(appmw.Authenticated).Get("/accounts", handlers.GetAccountsHandler)
 
+	r.With(appmw.Authenticated).Get("/accounts/reconcile", handlers.ReconcileHandler)
+
 	r.With(appmw.Authenticated).Get("/accounts/{id}/balance", handlers.AccountBalanceHandler)
 
 	r.With(appmw.Authenticated).Get("/transactions", handlers.TransactionsHandler)

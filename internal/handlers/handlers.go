@@ -70,6 +70,19 @@ type AccountBalanceResponse struct {
 	Balance  decimal.Decimal `json:"balance"`
 }
 
+type ReconcileEntry struct {
+	AccountID     uint            `json:"account_id"`
+	Currency      string          `json:"currency"`
+	StoredBalance decimal.Decimal `json:"stored_balance"`
+	LedgerSum     decimal.Decimal `json:"ledger_sum"`
+	Match         bool            `json:"match"`
+}
+
+type ReconcileResponse struct {
+	Accounts []ReconcileEntry `json:"accounts"`
+	AllMatch bool             `json:"all_match"`
+}
+
 // GetAccountsHandler godoc
 // @Summary      List user accounts
 // @Description  Get all accounts for the authenticated user
@@ -162,6 +175,66 @@ func AccountBalanceHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		logger.Log.Error("failed to encode account balance response", zap.Error(err))
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to encode response")
+		return
+	}
+}
+
+// ReconcileHandler godoc
+// @Summary      Reconcile account balances with ledger
+// @Description  Verify that each account's stored balance matches the sum of its ledger entries
+// @Tags         accounts
+// @Produce      json
+// @Success      200  {object}  ReconcileResponse
+// @Failure      401  {string}  string  "unauthorized"
+// @Failure      500  {string}  string  "server error"
+// @Security     ApiKeyAuth
+// @Router       /accounts/reconcile [get]
+func ReconcileHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	userID, ok := ctx.Value("userID").(uint64)
+	if !ok {
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var accounts []models.Account
+	if err := store.DB.Where("user_id = ?", userID).Find(&accounts).Error; err != nil {
+		logger.Log.Error("failed to fetch accounts", zap.Error(err))
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to fetch accounts")
+		return
+	}
+
+	entries := make([]ReconcileEntry, 0, len(accounts))
+	allMatch := true
+
+	for _, acc := range accounts {
+		var row struct {
+			Total decimal.Decimal
+		}
+		err := store.DB.Raw("SELECT COALESCE(SUM(amount), 0) AS total FROM ledger_entries WHERE account_id = ?", acc.ID).Scan(&row).Error
+		if err != nil {
+			logger.Log.Error("failed to sum ledger for account", zap.Uint("account_id", uint(acc.ID)), zap.Error(err))
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to reconcile")
+			return
+		}
+		match := acc.Balance.Equal(row.Total)
+		if !match {
+			allMatch = false
+		}
+		entries = append(entries, ReconcileEntry{
+			AccountID:     uint(acc.ID),
+			Currency:      acc.Currency,
+			StoredBalance: acc.Balance,
+			LedgerSum:     row.Total,
+			Match:         match,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(ReconcileResponse{Accounts: entries, AllMatch: allMatch}); err != nil {
+		logger.Log.Error("failed to encode reconcile response", zap.Error(err))
 		httputil.WriteError(w, http.StatusInternalServerError, "failed to encode response")
 		return
 	}
