@@ -2,6 +2,17 @@
 
 Backend for a simplified banking platform: double-entry ledger, JWT auth, transfers and currency exchange. Built with Go, Chi, GORM, PostgreSQL.
 
+## Repository & deployment
+
+| | URL |
+|---|-----|
+| **Repository** | https://github.com/GiorgiUbiria/banking-system |
+| **Deployed API** | https://banking-system-7hqp.onrender.com/ |
+
+Swagger (when deployed): https://banking-system-7hqp.onrender.com/swagger/index.html  
+
+The frontend is deployed at https://inquire-banking.netlify.app/ and connects to this API.
+
 ## User management (Option B)
 
 No registration endpoint. The app uses **3 pre-seeded test users** created on first run:
@@ -87,3 +98,9 @@ Swagger: `/swagger/index.html`.
 - **Double-entry ledger:** Every transfer/exchange creates ledger entries (debit/credit); account balances are stored for performance and kept in sync within the same DB transaction. `GET /accounts/reconcile` checks that each account’s balance matches the sum of its ledger entries.
 - **Concurrency:** Transfer and exchange handlers lock account rows with `SELECT ... FOR UPDATE` in a consistent order (by account ID) to avoid deadlocks and lost updates.
 - **Precision:** Monetary amounts use `shopspring/decimal`; exchange rate is fixed (1 USD = 0.92 EUR) and configurable.
+
+## Known limitations
+
+- No registration endpoint (Option B: pre-seeded users only).
+- Exchange rate is fixed and configurable via config/env, not a live feed.
+- Transaction history does not include amount or counterparty in the API response (only type, status, currency, date); ledger or reconcile endpoints provide full detail.
