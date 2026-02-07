@@ -109,6 +109,28 @@ definitions:
       name:
         type: string
     type: object
+  internal_handlers.ReconcileEntry:
+    properties:
+      account_id:
+        type: integer
+      currency:
+        type: string
+      ledger_sum:
+        type: number
+      match:
+        type: boolean
+      stored_balance:
+        type: number
+    type: object
+  internal_handlers.ReconcileResponse:
+    properties:
+      accounts:
+        items:
+          $ref: '#/definitions/internal_handlers.ReconcileEntry'
+        type: array
+      all_match:
+        type: boolean
+    type: object
   internal_handlers.TransferRequest:
     properties:
       amount:
@@ -195,6 +217,30 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get account balance
+      tags:
+      - accounts
+  /accounts/reconcile:
+    get:
+      description: Verify that each account's stored balance matches the sum of its
+        ledger entries
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.ReconcileResponse'
+        "401":
+          description: unauthorized
+          schema:
+            type: string
+        "500":
+          description: server error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Reconcile account balances with ledger
       tags:
       - accounts
   /auth/login:

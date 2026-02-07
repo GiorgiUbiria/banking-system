@@ -52,6 +52,43 @@
                 }
             }
         },
+        "/accounts/reconcile": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Verify that each account's stored balance matches the sum of its ledger entries",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Reconcile account balances with ledger",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ReconcileResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/accounts/{id}/balance": {
             "get": {
                 "security": [
@@ -603,6 +640,40 @@
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_handlers.ReconcileEntry": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "integer"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "ledger_sum": {
+                    "type": "number"
+                },
+                "match": {
+                    "type": "boolean"
+                },
+                "stored_balance": {
+                    "type": "number"
+                }
+            }
+        },
+        "internal_handlers.ReconcileResponse": {
+            "type": "object",
+            "properties": {
+                "accounts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.ReconcileEntry"
+                    }
+                },
+                "all_match": {
+                    "type": "boolean"
                 }
             }
         },
