@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/GiorgiUbiria/banking_system/configs"
+	"github.com/GiorgiUbiria/banking_system/internal/httputil"
 	"github.com/GiorgiUbiria/banking_system/internal/logger"
 	"github.com/GiorgiUbiria/banking_system/internal/models"
 	"github.com/GiorgiUbiria/banking_system/internal/store"
@@ -84,7 +85,7 @@ func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := ctx.Value("userID").(uint64)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -94,14 +95,14 @@ func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 		Find(&accounts).Error; err != nil {
 
 		logger.Log.Error("failed to fetch accounts", zap.Error(err))
-		http.Error(w, "failed to fetch accounts", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to fetch accounts")
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(accounts); err != nil {
 		logger.Log.Error("failed to encode response", zap.Error(err))
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to encode response")
 		return
 	}
 }
@@ -125,30 +126,30 @@ func AccountBalanceHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := ctx.Value("userID").(uint64)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil || id <= 0 {
-		http.Error(w, "invalid account id", http.StatusBadRequest)
+		httputil.WriteError(w, http.StatusBadRequest, "invalid account id")
 		return
 	}
 
 	var acc models.Account
 	if err := store.DB.First(&acc, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "account not found", http.StatusNotFound)
+			httputil.WriteError(w, http.StatusNotFound, "account not found")
 			return
 		}
 		logger.Log.Error("failed to load account", zap.Error(err))
-		http.Error(w, "failed to fetch account", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to fetch account")
 		return
 	}
 
 	if acc.UserID != userID {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		httputil.WriteError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
@@ -161,7 +162,7 @@ func AccountBalanceHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		logger.Log.Error("failed to encode account balance response", zap.Error(err))
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to encode response")
 		return
 	}
 }
@@ -180,23 +181,23 @@ func AccountBalanceHandler(w http.ResponseWriter, r *http.Request) {
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		httputil.WriteError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	if req.Email == "" || req.Password == "" {
-		http.Error(w, "email and password are required", http.StatusBadRequest)
+		httputil.WriteError(w, http.StatusBadRequest, "email and password are required")
 		return
 	}
 
 	var user models.User
 	if err := store.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
-		http.Error(w, "invalid email or password", http.StatusUnauthorized)
+		httputil.WriteError(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		http.Error(w, "invalid email or password", http.StatusUnauthorized)
+		httputil.WriteError(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
 
@@ -210,14 +211,14 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	signed, err := token.SignedString([]byte(configs.AppConfig.JWT.SECRET))
 	if err != nil {
 		logger.Log.Error("failed to sign jwt", zap.Error(err))
-		http.Error(w, "failed to create token", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to create token")
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(LoginResponse{Token: signed}); err != nil {
 		logger.Log.Error("failed to encode login response", zap.Error(err))
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to encode response")
 		return
 	}
 }
@@ -238,18 +239,18 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := ctx.Value("userID").(uint64)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	var user models.User
 	if err := store.DB.First(&user, userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "user not found", http.StatusNotFound)
+			httputil.WriteError(w, http.StatusNotFound, "user not found")
 			return
 		}
 		logger.Log.Error("failed to load user", zap.Error(err))
-		http.Error(w, "failed to fetch user", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to fetch user")
 		return
 	}
 
@@ -262,7 +263,7 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		logger.Log.Error("failed to encode me response", zap.Error(err))
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to encode response")
 		return
 	}
 }
@@ -285,19 +286,19 @@ func TransferHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := ctx.Value("userID").(uint64)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	var req TransferRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		httputil.WriteError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	amt, err := decimal.NewFromString(req.Amount)
 	if err != nil || !amt.IsPositive() {
-		http.Error(w, "amount must be a positive decimal", http.StatusBadRequest)
+		httputil.WriteError(w, http.StatusBadRequest, "amount must be a positive decimal")
 		return
 	}
 
@@ -387,20 +388,20 @@ func TransferHandler(w http.ResponseWriter, r *http.Request) {
 	if txErr != nil {
 		switch {
 		case errors.Is(txErr, errInsufficientFunds):
-			http.Error(w, "insufficient funds", http.StatusBadRequest)
+			httputil.WriteError(w, http.StatusBadRequest, "insufficient funds")
 			return
 		case errors.Is(txErr, errForbiddenAccount):
-			http.Error(w, "cannot transfer from another user's account", http.StatusForbidden)
+			httputil.WriteError(w, http.StatusForbidden, "cannot transfer from another user's account")
 			return
 		case errors.Is(txErr, errCurrencyMismatch):
-			http.Error(w, "accounts must have same currency", http.StatusBadRequest)
+			httputil.WriteError(w, http.StatusBadRequest, "accounts must have same currency")
 			return
 		case errors.Is(txErr, gorm.ErrRecordNotFound):
-			http.Error(w, "account not found", http.StatusNotFound)
+			httputil.WriteError(w, http.StatusNotFound, "account not found")
 			return
 		default:
 			logger.Log.Error("transfer failed", zap.Error(txErr))
-			http.Error(w, "failed to process transfer", http.StatusInternalServerError)
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to process transfer")
 			return
 		}
 	}
@@ -431,19 +432,19 @@ func ExchangeHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := ctx.Value("userID").(uint64)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	var req ExchangeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		httputil.WriteError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	amt, err := decimal.NewFromString(req.Amount)
 	if err != nil || !amt.IsPositive() {
-		http.Error(w, "amount must be a positive decimal", http.StatusBadRequest)
+		httputil.WriteError(w, http.StatusBadRequest, "amount must be a positive decimal")
 		return
 	}
 
@@ -548,23 +549,23 @@ func ExchangeHandler(w http.ResponseWriter, r *http.Request) {
 	if txErr != nil {
 		switch {
 		case errors.Is(txErr, errInsufficientFunds):
-			http.Error(w, "insufficient funds", http.StatusBadRequest)
+			httputil.WriteError(w, http.StatusBadRequest, "insufficient funds")
 			return
 		case errors.Is(txErr, errForbiddenFromAccount):
-			http.Error(w, "cannot exchange from another user's account", http.StatusForbidden)
+			httputil.WriteError(w, http.StatusForbidden, "cannot exchange from another user's account")
 			return
 		case errors.Is(txErr, errForbiddenToAccount):
-			http.Error(w, "cannot exchange to another user's account", http.StatusForbidden)
+			httputil.WriteError(w, http.StatusForbidden, "cannot exchange to another user's account")
 			return
 		case errors.Is(txErr, errSameCurrency):
-			http.Error(w, "accounts must have different currencies", http.StatusBadRequest)
+			httputil.WriteError(w, http.StatusBadRequest, "accounts must have different currencies")
 			return
 		case errors.Is(txErr, gorm.ErrRecordNotFound):
-			http.Error(w, "account not found", http.StatusNotFound)
+			httputil.WriteError(w, http.StatusNotFound, "account not found")
 			return
 		default:
 			logger.Log.Error("exchange failed", zap.Error(txErr))
-			http.Error(w, "failed to process exchange", http.StatusInternalServerError)
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to process exchange")
 			return
 		}
 	}
@@ -590,7 +591,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := ctx.Value("userID").(uint64)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -626,7 +627,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		Find(&txs).Error; err != nil {
 
 		logger.Log.Error("failed to fetch transactions", zap.Error(err))
-		http.Error(w, "failed to fetch transactions", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to fetch transactions")
 		return
 	}
 
@@ -635,7 +636,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		logger.Log.Error("failed to encode transactions response", zap.Error(err))
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to encode response")
 		return
 	}
 }
@@ -659,7 +660,7 @@ func LedgerEntriesHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := ctx.Value("userID").(uint64)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -688,22 +689,22 @@ func LedgerEntriesHandler(w http.ResponseWriter, r *http.Request) {
 	if accountIDStr != "" {
 		accID, err := strconv.Atoi(accountIDStr)
 		if err != nil || accID <= 0 {
-			http.Error(w, "invalid account_id", http.StatusBadRequest)
+			httputil.WriteError(w, http.StatusBadRequest, "invalid account_id")
 			return
 		}
 
 		var acc models.Account
 		if err := store.DB.First(&acc, accID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				http.Error(w, "account not found", http.StatusNotFound)
+				httputil.WriteError(w, http.StatusNotFound, "account not found")
 				return
 			}
 			logger.Log.Error("failed to load account", zap.Error(err))
-			http.Error(w, "failed to fetch ledger entries", http.StatusInternalServerError)
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to fetch ledger entries")
 			return
 		}
 		if acc.UserID != userID {
-			http.Error(w, "forbidden", http.StatusForbidden)
+			httputil.WriteError(w, http.StatusForbidden, "forbidden")
 			return
 		}
 
@@ -711,22 +712,22 @@ func LedgerEntriesHandler(w http.ResponseWriter, r *http.Request) {
 	} else if txIDStr != "" {
 		tid, err := strconv.Atoi(txIDStr)
 		if err != nil || tid <= 0 {
-			http.Error(w, "invalid tx_id", http.StatusBadRequest)
+			httputil.WriteError(w, http.StatusBadRequest, "invalid tx_id")
 			return
 		}
 
 		var tr models.Transaction
 		if err := store.DB.First(&tr, tid).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				http.Error(w, "transaction not found", http.StatusNotFound)
+				httputil.WriteError(w, http.StatusNotFound, "transaction not found")
 				return
 			}
 			logger.Log.Error("failed to load transaction", zap.Error(err))
-			http.Error(w, "failed to fetch ledger entries", http.StatusInternalServerError)
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to fetch ledger entries")
 			return
 		}
 		if tr.UserID != userID {
-			http.Error(w, "forbidden", http.StatusForbidden)
+			httputil.WriteError(w, http.StatusForbidden, "forbidden")
 			return
 		}
 
@@ -746,14 +747,14 @@ func LedgerEntriesHandler(w http.ResponseWriter, r *http.Request) {
 		Find(&entries).Error; err != nil {
 
 		logger.Log.Error("failed to fetch ledger entries", zap.Error(err))
-		http.Error(w, "failed to fetch ledger entries", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to fetch ledger entries")
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(entries); err != nil {
 		logger.Log.Error("failed to encode ledger entries response", zap.Error(err))
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to encode response")
 		return
 	}
 }
