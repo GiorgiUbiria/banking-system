@@ -213,7 +213,7 @@ func ReconcileHandler(w http.ResponseWriter, r *http.Request) {
 		var row struct {
 			Total decimal.Decimal
 		}
-		err := store.DB.Raw("SELECT COALESCE(SUM(amount), 0) AS total FROM ledger_entries WHERE account_id = ?", acc.ID).Scan(&row).Error
+		err := store.DB.Raw("SELECT COALESCE(SUM(amount::numeric), 0) AS total FROM ledger_entries WHERE account_id = ?", acc.ID).Scan(&row).Error
 		if err != nil {
 			logger.Log.Error("failed to sum ledger for account", zap.Uint("account_id", uint(acc.ID)), zap.Error(err))
 			httputil.WriteError(w, http.StatusInternalServerError, "failed to reconcile")
